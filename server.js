@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 
 // Load required ENV vars
 const { API_TOKEN, MONGO_URI, MONGO_DB_NAME = 'logs', MONGO_COLLECTION = 'docker_logs' } = process.env;
+console.log("api token for test is " + API_TOKEN);
 if (!API_TOKEN) throw new Error('Missing API_TOKEN in .env');
 if (!MONGO_URI) throw new Error('Missing MONGO_URI in .env');
 
