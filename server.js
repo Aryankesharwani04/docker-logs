@@ -1,9 +1,9 @@
 require('dotenv').config();
-const express = require('express');
+const express    = require('express');
 const bodyParser = require('body-parser');
 const { MongoClient } = require('mongodb');
 
-const app = express();
+const app  = express();
 const cors = require('cors');
 app.use(cors());
 
@@ -11,12 +11,12 @@ const PORT = process.env.PORT || 3000;
 const {
   API_TOKEN,
   MONGO_URI,
-  MONGO_DB_NAME = 'logs',
-  MONGO_COLLECTION = 'docker_logs'
+  MONGO_DB_NAME     = 'logs',
+  MONGO_COLLECTION  = 'docker_logs'
 } = process.env;
 
-if (!API_TOKEN) throw new Error('Missing API_TOKEN in .env');
-if (!MONGO_URI) throw new Error('Missing MONGO_URI in .env');
+if (!API_TOKEN)   throw new Error('Missing API_TOKEN in .env');
+if (!MONGO_URI)   throw new Error('Missing MONGO_URI in .env');
 
 let collection;
 (async () => {
@@ -26,14 +26,16 @@ let collection;
   console.log(`✅ Connected to MongoDB: ${MONGO_DB_NAME}.${MONGO_COLLECTION}`);
 })();
 
-// parse JSON bodies
-app.use(bodyParser.json());
+// parse JSON bodies—and also treat text/plain as JSON
+app.use(bodyParser.json({
+  type: ['application/json', 'text/plain']
+}));
 
-// ←–– UPDATED AUTH MIDDLEWARE HERE ––→
+// ── Token auth for /logs: first from ?token=…, then fallback to Bearer header
 app.use('/logs', (req, res, next) => {
-  const tokenFromQuery = req.query.token;
+  const tokenFromQuery  = req.query.token;
   const tokenFromHeader = (req.headers.authorization || '').split(' ')[1];
-  const token = tokenFromQuery || tokenFromHeader;
+  const token           = tokenFromQuery || tokenFromHeader;
 
   if (token !== API_TOKEN) {
     return res
@@ -46,10 +48,11 @@ app.use('/logs', (req, res, next) => {
 // ingest logs
 app.post('/logs', async (req, res) => {
   console.log('Headers:', req.headers);
-  console.log('Query:', req.query);
-  console.log('Body:', req.body);
+  console.log('Query:',   req.query);
+  console.log('Body:',    req.body);
 
-  const records = Array.isArray(req.body) ? req.body : [req.body];
+  // Normalize into array
+  const records = Array.isArray(req.body) ? req.body : [ req.body ];
   console.log('📥 Received batch of', records.length, 'records');
 
   try {
@@ -61,7 +64,7 @@ app.post('/logs', async (req, res) => {
   }
 });
 
-// debug: fetch latest
+// debug endpoint: fetch latest 100
 app.get('/logs', async (req, res) => {
   try {
     const logs = await collection
