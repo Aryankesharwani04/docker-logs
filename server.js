@@ -11,12 +11,12 @@ const PORT = process.env.PORT || 3000;
 const {
   API_TOKEN,
   MONGO_URI,
-  MONGO_DB_NAME     = 'logs',
-  MONGO_COLLECTION  = 'docker_logs'
+  MONGO_DB_NAME    = 'logs',
+  MONGO_COLLECTION = 'docker_logs'
 } = process.env;
 
-if (!API_TOKEN)   throw new Error('Missing API_TOKEN in .env');
-if (!MONGO_URI)   throw new Error('Missing MONGO_URI in .env');
+if (!API_TOKEN) throw new Error('Missing API_TOKEN in .env');
+if (!MONGO_URI) throw new Error('Missing MONGO_URI in .env');
 
 let collection;
 (async () => {
@@ -26,17 +26,17 @@ let collection;
   console.log(`✅ Connected to MongoDB: ${MONGO_DB_NAME}.${MONGO_COLLECTION}`);
 })();
 
-// parse JSON bodies—and also treat text/plain as JSON
+// ←— parse JSON and text/plain up to 5 MB
 app.use(bodyParser.json({
-  type: ['application/json', 'text/plain']
+  type: ['application/json', 'text/plain'],
+  limit: '5mb'
 }));
 
-// ── Token auth for /logs: first from ?token=…, then fallback to Bearer header
+// Token auth for /logs
 app.use('/logs', (req, res, next) => {
   const tokenFromQuery  = req.query.token;
   const tokenFromHeader = (req.headers.authorization || '').split(' ')[1];
   const token           = tokenFromQuery || tokenFromHeader;
-
   if (token !== API_TOKEN) {
     return res
       .status(token ? 403 : 401)
@@ -49,14 +49,12 @@ app.use('/logs', (req, res, next) => {
 app.post('/logs', async (req, res) => {
   console.log('Headers:', req.headers);
   console.log('Query:',   req.query);
-  console.log('Body:',    req.body);
+  console.log('Body size:', JSON.stringify(req.body).length);
 
-  // Normalize into array
   const records = Array.isArray(req.body) ? req.body : [ req.body ];
-  console.log('📥 Received batch of', records.length, 'records');
-
   try {
     await collection.insertMany(records);
+    // return 204 No Content
     res.sendStatus(204);
   } catch (err) {
     console.error('DB insert error:', err);
@@ -64,7 +62,7 @@ app.post('/logs', async (req, res) => {
   }
 });
 
-// debug endpoint: fetch latest 100
+// debug: fetch latest
 app.get('/logs', async (req, res) => {
   try {
     const logs = await collection
