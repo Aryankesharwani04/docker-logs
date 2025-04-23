@@ -5,6 +5,10 @@ const bodyParser = require('body-parser');
 const { MongoClient } = require('mongodb');
 
 const app = express();
+
+const cors = require('cors');
+app.use(cors());
+
 const PORT = process.env.PORT || 3000;
 
 // Load required ENV vars
@@ -43,11 +47,12 @@ app.use('/logs', (req, res, next) => {
 
 // Ingest logs
 app.post('/logs', async (req, res) => {
-  const records = req.body;
+  console.log('Headers:', req.headers);
+  console.log('Body:', req.body);
+
+  const records = Array.isArray(req.body) ? req.body : [req.body];
   console.log('📥 Received batch of', records.length, 'records:', records);
-  if (!Array.isArray(records)) {
-    return res.status(400).json({ error: 'Expected an array of log records' });
-  }
+
   try {
     await collection.insertMany(records);
     res.sendStatus(204);
