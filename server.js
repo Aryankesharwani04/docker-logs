@@ -1,57 +1,56 @@
 require('dotenv').config();
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const { MongoClient } = require('mongodb');
 
 const app = express();
-
 const cors = require('cors');
 app.use(cors());
 
 const PORT = process.env.PORT || 3000;
+const {
+  API_TOKEN,
+  MONGO_URI,
+  MONGO_DB_NAME = 'logs',
+  MONGO_COLLECTION = 'docker_logs'
+} = process.env;
 
-// Load required ENV vars
-const { API_TOKEN, MONGO_URI, MONGO_DB_NAME = 'logs', MONGO_COLLECTION = 'docker_logs' } = process.env;
-console.log("api token for test is " + API_TOKEN);
 if (!API_TOKEN) throw new Error('Missing API_TOKEN in .env');
 if (!MONGO_URI) throw new Error('Missing MONGO_URI in .env');
 
 let collection;
 (async () => {
-  try {
-    // Connect without deprecated options
-    const client = new MongoClient(MONGO_URI);
-    await client.connect();
-    const db = client.db(MONGO_DB_NAME);
-    collection = db.collection(MONGO_COLLECTION);
-    console.log(`✅ Connected to MongoDB: ${MONGO_DB_NAME}.${MONGO_COLLECTION}`);
-  } catch (err) {
-    console.error('❌ MongoDB connection error:', err);
-    process.exit(1);
-  }
+  const client = new MongoClient(MONGO_URI);
+  await client.connect();
+  collection = client.db(MONGO_DB_NAME).collection(MONGO_COLLECTION);
+  console.log(`✅ Connected to MongoDB: ${MONGO_DB_NAME}.${MONGO_COLLECTION}`);
 })();
 
-// Middleware
+// parse JSON bodies
 app.use(bodyParser.json());
 
-// Bearer-token auth for /logs
+// ←–– UPDATED AUTH MIDDLEWARE HERE ––→
 app.use('/logs', (req, res, next) => {
-  const auth = req.headers.authorization || '';
-  const [, token] = auth.split(' ');
+  const tokenFromQuery = req.query.token;
+  const tokenFromHeader = (req.headers.authorization || '').split(' ')[1];
+  const token = tokenFromQuery || tokenFromHeader;
+
   if (token !== API_TOKEN) {
-    return res.status(token ? 403 : 401).json({ error: token ? 'Forbidden' : 'Unauthorized' });
+    return res
+      .status(token ? 403 : 401)
+      .json({ error: token ? 'Forbidden' : 'Unauthorized' });
   }
   next();
 });
 
-// Ingest logs
+// ingest logs
 app.post('/logs', async (req, res) => {
   console.log('Headers:', req.headers);
+  console.log('Query:', req.query);
   console.log('Body:', req.body);
 
   const records = Array.isArray(req.body) ? req.body : [req.body];
-  console.log('📥 Received batch of', records.length, 'records:', records);
+  console.log('📥 Received batch of', records.length, 'records');
 
   try {
     await collection.insertMany(records);
@@ -62,7 +61,7 @@ app.post('/logs', async (req, res) => {
   }
 });
 
-// Fetch latest logs (debug)
+// debug: fetch latest
 app.get('/logs', async (req, res) => {
   try {
     const logs = await collection
