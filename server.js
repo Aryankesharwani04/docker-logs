@@ -26,13 +26,19 @@ let collection;
   console.log(`✅ Connected to MongoDB: ${MONGO_DB_NAME}.${MONGO_COLLECTION}`);
 })();
 
-// ←— parse JSON and text/plain up to 5 MB
+// ── 1) parse real JSON bodies (only application/json) up to 5mb
 app.use(bodyParser.json({
-  type: ['application/json', 'text/plain'],
+  type: 'application/json',
   limit: '5mb'
 }));
 
-// Token auth for /logs
+// ── 2) parse text/plain (NDJSON) up to 5mb
+app.use(bodyParser.text({
+  type: 'text/plain',
+  limit: '5mb'
+}));
+
+// ── Auth middleware
 app.use('/logs', (req, res, next) => {
   const tokenFromQuery  = req.query.token;
   const tokenFromHeader = (req.headers.authorization || '').split(' ')[1];
@@ -45,24 +51,37 @@ app.use('/logs', (req, res, next) => {
   next();
 });
 
-// ingest logs
+// ── Ingest endpoint
 app.post('/logs', async (req, res) => {
-  console.log('Headers:', req.headers);
-  console.log('Query:',   req.query);
-  console.log('Body size:', JSON.stringify(req.body).length);
+  let records;
+  try {
+    if (typeof req.body === 'string') {
+      // NDJSON: split lines, parse each JSON object
+      records = req.body
+        .trim()
+        .split('\n')
+        .filter(line => line.length > 0)
+        .map(line => JSON.parse(line));
+    } else {
+      // real JSON
+      records = Array.isArray(req.body) ? req.body : [ req.body ];
+    }
+  } catch (parseErr) {
+    console.error('❌ JSON parse error:', parseErr);
+    return res.status(400).json({ error: 'Invalid JSON in log payload' });
+  }
 
-  const records = Array.isArray(req.body) ? req.body : [ req.body ];
+  console.log(`📥 Received batch of ${records.length} records`);
   try {
     await collection.insertMany(records);
-    // return 204 No Content
-    res.sendStatus(204);
+    return res.sendStatus(204);
   } catch (err) {
-    console.error('DB insert error:', err);
-    res.status(500).json({ error: 'Internal Server Error' });
+    console.error('❌ DB insert error:', err);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
-// debug: fetch latest
+// ── Debug: fetch latest 100 logs
 app.get('/logs', async (req, res) => {
   try {
     const logs = await collection
@@ -72,9 +91,15 @@ app.get('/logs', async (req, res) => {
       .toArray();
     res.json(logs);
   } catch (err) {
-    console.error('DB fetch error:', err);
+    console.error('❌ DB fetch error:', err);
     res.status(500).json({ error: 'Internal Server Error' });
   }
+});
+
+// ── Global error‐handler to ensure we never return HTML
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(err.status || 500).json({ error: err.message || 'Server Error' });
 });
 
 app.listen(PORT, () => {
